@@ -86,7 +86,7 @@ def grow_pixels():
 
     # Once fully grown, store it as fixed_pixel_map
     if np.all(pixel_map >= 0):
-        print("All pixels occupied! Storing fixed map and starting squish...")
+        print("Solidification completed! Starting compression.")
         fixed_pixel_map = pixel_map.copy()  # Store final map
         start_squish()
 
@@ -120,25 +120,6 @@ def apply_squish():
             compressed_map[new_row] = fixed_pixel_map[old_row]  # Move pixels downward
 
     pixel_map[:] = compressed_map  # Update only pixel_map, keeping fixed_pixel_map intact
-
-#def display_compressive_strength():
-#    """Calculates and displays the compressive strength using the Hall-Petch relationship."""
-#    sigma_0 = 100  # Base strength (MPa)
-#    k = 3000  # Hall-Petch coefficient (MPa·mm^0.5)
-
-#    num_seeds = len(seed_list)
-#    if num_seeds == 0:
-#        strength = sigma_0  # Default strength when no seeds are present
-#    else:
-#        avg_grain_size = 10000 / num_seeds  # Estimate grain size
-#        strength = sigma_0 + k * (avg_grain_size ** -0.5)
-#    # Render text to display on screen
-#    font = pygame.font.Font(None, 36)  # Default font, size 36
-#    text = font.render(f"Compressive Strength: {strength:.2f} MPa", True, (255, 255, 255))
-
-#    # Position the text at the top-left corner
-#    screen.blit(text, (50, 50))
-
 
 def display_compressive_strength():
     """Calculates and displays the compressive strength using the Hall-Petch relationship and a bar chart."""
