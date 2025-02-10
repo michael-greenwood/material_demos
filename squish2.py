@@ -12,7 +12,7 @@ SCREEN_WIDTH, SCREEN_HEIGHT = info.current_w, info.current_h
 
 # Fixed logical grid size (square)
 GRID_SIZE = 400  # Logical resolution of the grid
-PIXEL_SIZE = 4  # Each logical pixel is a 10x10 block
+PIXEL_SIZE = 1  # Each logical pixel is a 10x10 block
 GRID_WIDTH = GRID_SIZE // PIXEL_SIZE
 GRID_HEIGHT = GRID_SIZE // PIXEL_SIZE
 
@@ -21,13 +21,13 @@ screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.FULLSCREE
 pygame.display.set_caption("Volume-Conserving Squish Simulation")
 
 # Create a pixel array (stores seed ID, -1 means empty)
-pixel_map = np.full((GRID_HEIGHT, GRID_WIDTH), -1, dtype=np.int8)
+pixel_map = np.full((GRID_HEIGHT, GRID_WIDTH), -1, dtype=np.int16)
 
 # Seed storage (maps seed ID to color index 0-45)
 seed_list = []
 
 # Growth interval (tunable)
-GROWTH_INTERVAL = .1  
+GROWTH_INTERVAL = .2  
 FINAL_SQUISH = 0.5
 # Squish effect variables
 is_squishing = False
@@ -121,24 +121,107 @@ def apply_squish():
 
     pixel_map[:] = compressed_map  # Update only pixel_map, keeping fixed_pixel_map intact
 
+#def display_compressive_strength():
+#    """Calculates and displays the compressive strength using the Hall-Petch relationship."""
+#    sigma_0 = 100  # Base strength (MPa)
+#    k = 3000  # Hall-Petch coefficient (MPa·mm^0.5)
+
+#    num_seeds = len(seed_list)
+#    if num_seeds == 0:
+#        strength = sigma_0  # Default strength when no seeds are present
+#    else:
+#        avg_grain_size = 10000 / num_seeds  # Estimate grain size
+#        strength = sigma_0 + k * (avg_grain_size ** -0.5)
+#    # Render text to display on screen
+#    font = pygame.font.Font(None, 36)  # Default font, size 36
+#    text = font.render(f"Compressive Strength: {strength:.2f} MPa", True, (255, 255, 255))
+
+#    # Position the text at the top-left corner
+#    screen.blit(text, (50, 50))
+
+
 def display_compressive_strength():
-    """Calculates and displays the compressive strength using the Hall-Petch relationship."""
+    """Calculates and displays the compressive strength using the Hall-Petch relationship and a bar chart."""
+    if not squish_complete:
+        return  # Only display after squishing is complete
+
     sigma_0 = 100  # Base strength (MPa)
-    k = 30  # Hall-Petch coefficient (MPa·mm^0.5)
+    k = 3000  # Hall-Petch coefficient (MPa·mm^0.5)
 
     num_seeds = len(seed_list)
     if num_seeds == 0:
         strength = sigma_0  # Default strength when no seeds are present
     else:
-        avg_grain_size = GRID_SIZE / num_seeds  # Estimate grain size
+        avg_grain_size = 10000 / num_seeds  # Estimate grain size
         strength = sigma_0 + k * (avg_grain_size ** -0.5)
 
-    # Render text to display on screen
-    font = pygame.font.Font(None, 36)  # Default font, size 36
-    text = font.render(f"Compressive Strength: {strength:.2f} MPa", True, (255, 255, 255))
+    # Define categories and colors
+    categories = [
+        (175, "Weak", (255, 0, 0)),        # Red
+        (350, "OK", (255, 165, 0)),        # Orange
+        (500, "Great", (255, 255, 0)),     # Yellow
+        (800, "Impressive", (0, 255, 0)),  # Green
+    ]
 
-    # Position the text at the top-left corner
+    # Determine category
+    for threshold, label, color in categories:
+        if strength < threshold:
+            break
+
+    # Render text
+    font = pygame.font.Font(None, 36)
+    text = font.render(f"Compressive Strength: {strength:.2f} MPa", True, (255, 255, 255))
     screen.blit(text, (50, 50))
+
+    # Draw the bar chart
+    bar_x, bar_y = 50, 100  # Bar position
+    bar_width = 300
+    bar_height = 30
+
+    # Normalize the strength for bar length (max 800 MPa)
+    normalized_strength = min(strength, 800) / 800  
+    filled_width = int(bar_width * normalized_strength)
+
+    pygame.draw.rect(screen, (100, 100, 100), (bar_x, bar_y, bar_width, bar_height))  # Background bar (grey)
+    pygame.draw.rect(screen, color, (bar_x, bar_y, filled_width, bar_height))  # Filled portion
+
+    # Render category label
+    label_text = font.render(label, True, color)
+    screen.blit(label_text, (bar_x + bar_width + 20, bar_y))
+
+def reset_simulation():
+    """Resets the simulation to its initial state."""
+    global pixel_map, seed_list, is_squishing, squish_factor, squish_complete, fixed_pixel_map
+
+    # Clear the pixel map
+    pixel_map = np.full((GRID_HEIGHT, GRID_WIDTH), -1, dtype=np.int8)
+
+    # Reset seed list and squish variables
+    seed_list.clear()
+    is_squishing = False
+    squish_factor = 1.0
+    squish_complete = False
+    fixed_pixel_map = None  # Clear fixed map
+
+    print("Simulation Reset!")
+
+def draw_reset_button():
+    """Draws a reset button on the screen."""
+    button_width, button_height = 150, 50
+    button_x, button_y = SCREEN_WIDTH - button_width - 50, SCREEN_HEIGHT - button_height - 50  # Bottom-right corner
+    button_color = (200, 200, 200)  # Light grey
+    text_color = (0, 0, 0)  # Black
+
+    # Draw the button rectangle
+    pygame.draw.rect(screen, button_color, (button_x, button_y, button_width, button_height))
+
+    # Draw text inside the button
+    font = pygame.font.Font(None, 36)
+    text = font.render("Reset", True, text_color)
+    text_rect = text.get_rect(center=(button_x + button_width // 2, button_y + button_height // 2))
+    screen.blit(text, text_rect)
+
+    return button_x, button_y, button_width, button_height
 
 
 running = True
@@ -171,8 +254,16 @@ while running:
             if event.key == pygame.K_ESCAPE:
                 running = False  # Allow ESC key to exit
         elif event.type == pygame.MOUSEBUTTONDOWN:
+            mx, my = event.pos
+
+            # Check if the Reset button was clicked
+            button_x, button_y, button_width, button_height = draw_reset_button()
+            if button_x <= mx <= button_x + button_width and button_y <= my <= button_y + button_height:
+                reset_simulation()
+                continue  # Skip further processing if reset was clicked
+
+            # If the simulation is NOT in the squish phase, allow seed placement
             if not is_squishing:
-                mx, my = event.pos
                 scale_factor = min(SCREEN_WIDTH / GRID_SIZE, SCREEN_HEIGHT / GRID_SIZE)
                 grid_x = int((mx - offset_x) / scale_factor) // PIXEL_SIZE
                 grid_y = int((my - offset_y) / scale_factor) // PIXEL_SIZE
@@ -193,7 +284,8 @@ while running:
     
     if squish_complete:
         display_compressive_strength()
-
+    # Draw Reset button
+    draw_reset_button()
     pygame.display.flip()
 
 pygame.quit()
