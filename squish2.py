@@ -27,12 +27,13 @@ pixel_map = np.full((GRID_HEIGHT, GRID_WIDTH), -1, dtype=np.int16)
 seed_list = []
 
 # Growth interval (tunable)
-GROWTH_INTERVAL = .2  
+GROWTH_INTERVAL = .05  
 FINAL_SQUISH = 0.5
 # Squish effect variables
 is_squishing = False
 squish_factor = 1.0  # Starts at normal size (1.0 means no squish)
 squish_complete = False  # Flag to stop squishing but keep running
+seeding_started = False
 
 def generate_color(value):
     """Convert a value (0-45) to a color gradient from red to blue."""
@@ -65,29 +66,40 @@ def update_surface():
 
     return scaled_surface, scaled_size
 
+growth_front = set()  # Stores (y, x) pixels that can still grow
+
 def grow_pixels():
-    """Expands all seeded pixels using NumPy operations."""
-    global pixel_map, is_squishing, fixed_pixel_map
+    """Expands only from the tracked growth front, reducing redundant checks."""
+    global pixel_map, is_squishing, fixed_pixel_map, growth_front
 
     if is_squishing:
         return  # Stop growth if squishing
 
-    new_map = pixel_map.copy()
-    seeded_pixels = np.argwhere(pixel_map >= 0)
-
-    for y, x in seeded_pixels:
+    new_growth = set()  # Stores new pixels added this step
+    for y, x in list(growth_front):  # Loop only over expandable pixels
         seed_id = pixel_map[y, x]
+        can_still_grow = False  # Track if this pixel can still expand
+
         for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
             nx, ny = x + dx, y + dy
-            if 0 <= nx < GRID_WIDTH and 0 <= ny < GRID_HEIGHT and pixel_map[ny, nx] == -1:
-                new_map[ny, nx] = seed_id
 
-    pixel_map = new_map
+            if 0 <= nx < GRID_WIDTH and 0 <= ny < GRID_HEIGHT:
+                if pixel_map[ny, nx] == -1:  # Empty neighbor found
+                    pixel_map[ny, nx] = seed_id
+                    new_growth.add((ny, nx))  # Add new pixel to track
+                    can_still_grow = True
 
-    # Once fully grown, store it as fixed_pixel_map
-    if np.all(pixel_map >= 0):
+        # Remove pixels that can no longer grow
+        if not can_still_grow:
+            growth_front.remove((y, x))
+
+    # Update `growth_front` with newly added pixels
+    growth_front.update(new_growth)
+
+    # Check if growth is complete
+    if not growth_front and seeding_started:  # No more pixels can grow
         print("Solidification completed! Starting compression.")
-        fixed_pixel_map = pixel_map.copy()  # Store final map
+        fixed_pixel_map = pixel_map.copy()
         start_squish()
 
 
@@ -172,19 +184,18 @@ def display_compressive_strength():
 
 def reset_simulation():
     """Resets the simulation to its initial state."""
-    global pixel_map, seed_list, is_squishing, squish_factor, squish_complete, fixed_pixel_map
+    global pixel_map, seed_list, is_squishing, squish_factor, squish_complete, fixed_pixel_map, growth_front, seeding_started
 
-    # Clear the pixel map
-    pixel_map = np.full((GRID_HEIGHT, GRID_WIDTH), -1, dtype=np.int8)
-
-    # Reset seed list and squish variables
+    pixel_map = np.full((GRID_HEIGHT, GRID_WIDTH), -1, dtype=np.int16)
     seed_list.clear()
+    growth_front.clear()  # Reset tracked growth pixels
     is_squishing = False
     squish_factor = 1.0
     squish_complete = False
-    fixed_pixel_map = None  # Clear fixed map
-
+    fixed_pixel_map = None
+    seeding_started = False
     print("Simulation Reset!")
+
 
 def draw_reset_button():
     """Draws a reset button on the screen."""
@@ -228,6 +239,9 @@ while running:
             squish_height  # Extends down to squish height
             ))
 
+    # Check if the Reset button was clicked
+    button_x, button_y, button_width, button_height = draw_reset_button()
+
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
@@ -237,14 +251,13 @@ while running:
         elif event.type == pygame.MOUSEBUTTONDOWN:
             mx, my = event.pos
 
-            # Check if the Reset button was clicked
-            button_x, button_y, button_width, button_height = draw_reset_button()
             if button_x <= mx <= button_x + button_width and button_y <= my <= button_y + button_height:
                 reset_simulation()
                 continue  # Skip further processing if reset was clicked
 
             # If the simulation is NOT in the squish phase, allow seed placement
             if not is_squishing:
+                mx, my = event.pos
                 scale_factor = min(SCREEN_WIDTH / GRID_SIZE, SCREEN_HEIGHT / GRID_SIZE)
                 grid_x = int((mx - offset_x) / scale_factor) // PIXEL_SIZE
                 grid_y = int((my - offset_y) / scale_factor) // PIXEL_SIZE
@@ -254,6 +267,10 @@ while running:
                     new_seed_value = random.randint(0, 45)
                     seed_list.append(new_seed_value)
                     pixel_map[grid_y, grid_x] = new_seed_id
+                    
+                    seeding_started = True
+                    growth_front.add((grid_y, grid_x))  # Track new seed in growth front
+                    
     
     if not is_squishing and time.time() - last_update_time > GROWTH_INTERVAL:
         grow_pixels()
